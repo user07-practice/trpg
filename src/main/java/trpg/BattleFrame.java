@@ -7,169 +7,169 @@ import java.util.List;
 import java.util.Random;
 
 public class BattleFrame extends JFrame {
-    private CharacterFrame charFrame;
     private Random random = new Random();
 
-    // 選択コンボボックス
+    // コンポーネント（選択系）
     private JComboBox<String> attackerCombo;
     private JComboBox<String> defenderCombo;
+    private JComboBox<String> weaponSelectCombo; // 攻撃側の武器を自動で選ぶ枠
+    private JComboBox<String> modeCombo;         // 1回 / 2発 / 3発 連射モード
 
-    // 【攻撃側】の入力欄
-    private JTextField weaponHitInput;
-    private JTextField damageDiceInput;
-
-    // 【防御側】の選択・ステータス
+    // 防御側の選択
     private JRadioButton avoidRadio;
     private JRadioButton parryRadio;
     private JRadioButton noneRadio;
     private JLabel defenderStatusLabel;
 
-    // 敵（エネミー）のデータ保持
+    // 敵（エネミー）のデータ
     private int enemyMaxHp = 0;
     private int enemyCurrentHp = 0;
     private JLabel enemyHpLabel;
     private JTextField enemyMaxHpInput;
     private JCheckBox hideEnemyHpCheck;
 
-    // ログ表示
+    // 実況ログ
     private JTextArea battleLogArea;
 
     private List<CharacterFrame> activeFrames = new ArrayList<>();
+    private List<String[]> currentAttackerWeapons = new ArrayList<>(); // 選択中のキャラの武器データ保持用
 
-    public BattleFrame(CharacterFrame charFrame) {
-        this.charFrame = charFrame;
-
-        setTitle("⚔️ 統合決戦ステージ（攻撃・防御・HP管理がっちゃんこ版）");
-        setSize(800, 650);
+    public BattleFrame(CharacterFrame currentFrame) {
+        setTitle("⚔️ 統合型・決戦バトルステージ");
+        setSize(900, 600);
         setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-        setLocationRelativeTo(charFrame);
+        setLocationRelativeTo(currentFrame);
         setLayout(new BorderLayout(10, 10));
 
-        // 参加キャラクターの自動検出
+        // 立ち上がっているキャラシの読み込み
         refreshActiveCharacters();
 
-        // ─── 左側：戦闘コントロールパネル ───
+        // ─── 全体のレイアウト（左・中央・右の3分割パネル） ───
+        JPanel centerPanel = new JPanel(new GridLayout(1, 3, 10, 0));
+        centerPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        // 📌 【左パネル】攻撃側の宣言
         JPanel leftPanel = new JPanel();
         leftPanel.setLayout(new BoxLayout(leftPanel, BoxLayout.Y_AXIS));
-        leftPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        leftPanel.setPreferredSize(new Dimension(450, 0));
+        leftPanel.setBorder(BorderFactory.createTitledBorder("⚔️ 1. 攻撃側の操作"));
 
-        // 1. だれが戦うかエリア
-        JPanel vsPanel = new JPanel(new GridLayout(2, 2, 5, 5));
-        vsPanel.setBorder(BorderFactory.createTitledBorder("1. 対戦者の選択"));
         attackerCombo = new JComboBox<>();
-        defenderCombo = new JComboBox<>();
-        populateCombos();
+        attackerCombo.addActionListener(e -> onAttackerSelected()); // 攻撃者を変えたら武器一覧を自動更新！
 
-        // ディフェンダーが切り替わったら防御側のステータス表示を更新する
+        weaponSelectCombo = new JComboBox<>();
+        weaponSelectCombo.setFont(new Font("Meiryo", Font.PLAIN, 12));
+
+        modeCombo = new JComboBox<>(new String[]{"💥 1回攻撃", "🔥 2発連射", "⚡ 3発連射"});
+        modeCombo.setFont(new Font("Meiryo", Font.BOLD, 12));
+
+        JPanel atkGrid = new JPanel(new GridLayout(3, 2, 5, 8));
+        atkGrid.add(new JLabel("攻撃する人:"));
+        atkGrid.add(attackerCombo);
+        atkGrid.add(new JLabel("使用する武器:"));
+        atkGrid.add(weaponSelectCombo);
+        atkGrid.add(new JLabel("攻撃モード:"));
+        atkGrid.add(modeCombo);
+        leftPanel.add(atkGrid);
+        leftPanel.add(Box.createVerticalStrut(20));
+
+        // エネミー設定を左パネルの下部に配置
+        JPanel enemyConfigPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        enemyConfigPanel.setBorder(BorderFactory.createTitledBorder("エネミー初期設定"));
+        enemyMaxHpInput = new JTextField("30", 4);
+        JButton setEnemyBtn = new JButton("設定");
+        setEnemyBtn.addActionListener(e -> setEnemyHp());
+        hideEnemyHpCheck = new JCheckBox("HPを隠す");
+        hideEnemyHpCheck.addActionListener(e -> updateEnemyHpDisplay());
+
+        enemyConfigPanel.add(new JLabel("最大HP:"));
+        enemyConfigPanel.add(enemyMaxHpInput);
+        enemyConfigPanel.add(setEnemyBtn);
+        enemyConfigPanel.add(hideEnemyHpCheck);
+        leftPanel.add(enemyConfigPanel);
+
+        // 📌 【中央パネル】防御側の選択
+        JPanel midPanel = new JPanel();
+        midPanel.setLayout(new BoxLayout(midPanel, BoxLayout.Y_AXIS));
+        midPanel.setBorder(BorderFactory.createTitledBorder("🛡️ 2. 防御側の対応"));
+
+        defenderCombo = new JComboBox<>();
         defenderCombo.addActionListener(e -> updateDefenderStatusDisplay());
 
-        vsPanel.add(new JLabel("⚔️ 攻撃側:"));
-        vsPanel.add(attackerCombo);
-        vsPanel.add(new JLabel("🛡️ 防御側:"));
-        vsPanel.add(defenderCombo);
-        leftPanel.add(vsPanel);
-        leftPanel.add(Box.createVerticalStrut(10));
-
-        // 2. 攻撃ウィンドウの機能（がっちゃんこ部分）
-        JPanel attackPanel = new JPanel(new GridLayout(3, 2, 5, 5));
-        attackPanel.setBorder(BorderFactory.createTitledBorder("2. 攻撃側の宣言（旧・攻撃ウィンドウ）"));
-
-        weaponHitInput = new JTextField("50", 5);
-        damageDiceInput = new JTextField("1D6+DB", 8); // DB（ダメージボーナス）や通常の1D6+2など
-
-        attackPanel.add(new JLabel("攻撃の命中率 (%):"));
-        attackPanel.add(weaponHitInput);
-        attackPanel.add(new JLabel("ダメージ数式 (例: 1D6):"));
-        attackPanel.add(damageDiceInput);
-
-        JButton attackBtn = new JButton("🎲 攻撃ダイスを振る！");
-        attackBtn.setBackground(new Color(255, 230, 230));
-        attackBtn.setFont(new Font("Meiryo", Font.BOLD, 12));
-        attackBtn.addActionListener(e -> executeBattleRound());
-
-        // レイアウト調整用にボタンを配置
-        attackPanel.add(new JLabel("👇 すべての判定を自動処理:"));
-        attackPanel.add(attackBtn);
-        leftPanel.add(attackPanel);
-        leftPanel.add(Box.createVerticalStrut(10));
-
-        // 3. 防御側の選択エリア（回避 vs 受け流し）
-        JPanel defensePanel = new JPanel();
-        defensePanel.setLayout(new BoxLayout(defensePanel, BoxLayout.Y_AXIS));
-        defensePanel.setBorder(BorderFactory.createTitledBorder("3. 防御側の選択（回避 or 受け流し）"));
+        JPanel defGrid = new JPanel(new GridLayout(1, 2, 5, 5));
+        defGrid.add(new JLabel("防御・回避する人:"));
+        defGrid.add(defenderCombo);
+        midPanel.add(defGrid);
+        midPanel.add(Box.createVerticalStrut(15));
 
         avoidRadio = new JRadioButton("回避を試みる（成功でダメージ0）", true);
-        parryRadio = new JRadioButton("受け流し（武器やこぶしでガード・ダメージ軽減/0）");
-        noneRadio = new JRadioButton("無防備（ダイスを振らずに直撃を受ける）");
-
+        parryRadio = new JRadioButton("受け流し（こぶし等でガード）");
+        noneRadio = new JRadioButton("無防備（直撃を受ける）");
         ButtonGroup bg = new ButtonGroup();
-        bg.add(avoidRadio);
-        bg.add(parryRadio);
-        bg.add(noneRadio);
+        bg.add(avoidRadio); bg.add(parryRadio); bg.add(noneRadio);
 
-        JPanel radioPanel = new JPanel(new GridLayout(3, 1));
+        JPanel radioPanel = new JPanel(new GridLayout(3, 1, 5, 5));
         radioPanel.add(avoidRadio);
         radioPanel.add(parryRadio);
         radioPanel.add(noneRadio);
-        defensePanel.add(radioPanel);
+        midPanel.add(radioPanel);
+        midPanel.add(Box.createVerticalStrut(15));
 
-        defenderStatusLabel = new JLabel("現在の防御側ステータス ➔ 回避: -- % | 受け流し(近接技能): -- %");
+        defenderStatusLabel = new JLabel("ステータス ➔ 回避: --% | 受け流し: --%");
         defenderStatusLabel.setFont(new Font("Meiryo", Font.ITALIC, 11));
-        defenderStatusLabel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
-        defensePanel.add(defenderStatusLabel);
+        midPanel.add(defenderStatusLabel);
+        midPanel.add(Box.createVerticalStrut(30));
 
-        leftPanel.add(defensePanel);
-        leftPanel.add(Box.createVerticalStrut(10));
+        // 💥 すべてを全自動ジャッジする運命のボタン！
+        JButton executeBtn = new JButton("🎲 選択内容で戦闘ロール実行！");
+        executeBtn.setFont(new Font("Meiryo", Font.BOLD, 14));
+        executeBtn.setBackground(new Color(255, 215, 0)); // 豪華なゴールドカラー
+        executeBtn.setPreferredSize(new Dimension(200, 50));
+        executeBtn.addActionListener(e -> executeBattleRound());
+        midPanel.add(executeBtn);
 
-        // 4. エネミー設定エリア
-        JPanel enemyPanel = new JPanel(new BorderLayout());
-        enemyPanel.setBorder(BorderFactory.createTitledBorder("エネミー（敵NPC）専用設定"));
-        JPanel enemyRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        enemyRow.add(new JLabel("最大HP:"));
-        enemyMaxHpInput = new JTextField("30", 4);
-        enemyRow.add(enemyMaxHpInput);
-        JButton setEnemyBtn = new JButton("設定");
-        setEnemyBtn.addActionListener(e -> setEnemyHp());
-        enemyRow.add(setEnemyBtn);
-        hideEnemyHpCheck = new JCheckBox("HPを隠す");
-        hideEnemyHpCheck.addActionListener(e -> updateEnemyHpDisplay());
-        enemyRow.add(hideEnemyHpCheck);
-
-        JButton refreshBtn = new JButton("🔄 メンバー更新");
-        refreshBtn.addActionListener(e -> { refreshActiveCharacters(); populateCombos(); });
-        enemyRow.add(refreshBtn);
-
-        enemyPanel.add(enemyRow, BorderLayout.CENTER);
-        leftPanel.add(enemyPanel);
-
-        add(leftPanel, BorderLayout.WEST);
-
-        // ─── 右側：リアルタイム戦闘ログ ＆ HP表示 ───
+        // 📌 【右パネル】HP表示 ＆ 実況ログ
         JPanel rightPanel = new JPanel(new BorderLayout(5, 5));
-        rightPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        rightPanel.setBorder(BorderFactory.createTitledBorder("📊 3. 戦況・リアルタイム実況"));
 
-        // 上部に敵のHPバーっぽく表示
         enemyHpLabel = new JLabel("敵のHP: 未設定", SwingConstants.CENTER);
         enemyHpLabel.setFont(new Font("Meiryo", Font.BOLD, 22));
         enemyHpLabel.setForeground(Color.RED);
         enemyHpLabel.setBorder(BorderFactory.createLineBorder(Color.LIGHT_GRAY, 2));
         rightPanel.add(enemyHpLabel, BorderLayout.NORTH);
 
-        // 中央に戦闘ログエリア
         battleLogArea = new JTextArea();
         battleLogArea.setEditable(false);
         battleLogArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        battleLogArea.setBackground(new Color(245, 245, 245));
+        battleLogArea.setBackground(new Color(248, 248, 248));
+        battleLogArea.setLineWrap(true);       // 画面の端で自動的に折り返す
+        battleLogArea.setWrapStyleWord(true);  // 単語の途中で変な折り返しをしないようにする
         JScrollPane logScroll = new JScrollPane(battleLogArea);
-        logScroll.setBorder(BorderFactory.createTitledBorder("⚔️ 戦闘ラウンド・リアルタイム実況ログ"));
         rightPanel.add(logScroll, BorderLayout.CENTER);
 
-        add(rightPanel, BorderLayout.CENTER);
+        // 各パネルをがっちゃんこ
+        centerPanel.add(leftPanel);
+        centerPanel.add(midPanel);
+        centerPanel.add(rightPanel);
+        add(centerPanel, BorderLayout.CENTER);
 
+        // 下部コントロールバー（メンバー更新ボタンなど）
+        JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton refreshBtn = new JButton("🔄 参加メンバー・キャラシ一覧を更新");
+        refreshBtn.addActionListener(e -> refreshAll());
+        bottomBar.add(refreshBtn);
+        add(bottomBar, BorderLayout.SOUTH);
+
+        // 初期データ詰め込み
+        refreshAll();
+        setVisible(true);
+    }
+
+    private void refreshAll() {
+        refreshActiveCharacters();
+        populateCombos();
+        onAttackerSelected();
         updateDefenderStatusDisplay();
         updateEnemyHpDisplay();
-        setVisible(true);
     }
 
     private void refreshActiveCharacters() {
@@ -200,20 +200,57 @@ public class BattleFrame extends JFrame {
         if (lastDef != null) defenderCombo.setSelectedItem(lastDef);
     }
 
-    // 防御側に選ばれたキャラのステータスを自動でのぞき見して画面に表示する
+    // 攻撃者が選ばれたら、そのキャラクターの武器データをキャラシから泥棒してドロップダウンにセットする
+    private void onAttackerSelected() {
+        String attackerName = (String) attackerCombo.getSelectedItem();
+        weaponSelectCombo.removeAllItems();
+        currentAttackerWeapons.clear();
+
+        if (attackerName == null) return;
+
+        if (attackerName.equals("エネミー（敵）")) {
+            weaponSelectCombo.addItem("通常攻撃 (1D6)");
+            currentAttackerWeapons.add(new String[]{"通常攻撃", "1D6", "", ""});
+            weaponSelectCombo.addItem("強攻撃 (2D6)");
+            currentAttackerWeapons.add(new String[]{"強攻撃", "2D6", "", ""});
+        } else {
+            CharacterFrame atkFrame = findFrameByName(attackerName);
+            if (atkFrame != null) {
+                try {
+                    // キャラシから武器データを直接引っ張る
+                    List<String[]> wData = atkFrame.getExtendedWeaponData();
+                    for (String[] w : wData) {
+                        if (!w[0].isEmpty() && !w[1].isEmpty()) {
+                            weaponSelectCombo.addItem(w[0] + " (" + w[1] + ")");
+                            currentAttackerWeapons.add(w);
+                        }
+                    }
+                } catch (Exception e) {
+                    // メソッドがない場合のセーフティ
+                    weaponSelectCombo.addItem("こぶし (1D3)");
+                    currentAttackerWeapons.add(new String[]{"こぶし", "1D3", "", ""});
+                }
+            }
+            if (weaponSelectCombo.getItemCount() == 0) {
+                weaponSelectCombo.addItem("素手 (1D3)");
+                currentAttackerWeapons.add(new String[]{"素手", "1D3", "", ""});
+            }
+        }
+    }
+
     private void updateDefenderStatusDisplay() {
         String defenderName = (String) defenderCombo.getSelectedItem();
         if (defenderName == null) return;
 
         if (defenderName.equals("エネミー（敵）")) {
-            defenderStatusLabel.setText("敵のステータス ➔ 回避: 30% | 受け流し: 30%");
+            defenderStatusLabel.setText("ステータス ➔ 回避: 30% | 受け流し: 30%");
         } else {
             CharacterFrame defFrame = findFrameByName(defenderName);
             if (defFrame != null) {
                 int avoid = defFrame.findValueByName("回避");
-                int parry = defFrame.findValueByName("近接戦闘") != -1 ? defFrame.findValueByName("近接戦闘") : defFrame.findValueByName("こぶし");
-                if (parry == -1) parry = 25; // こぶしの初期値など
-                defenderStatusLabel.setText(String.format("%s ➔ 回避: %d%% | 受け流し(こぶし等): %d%%", defenderName, avoid, parry));
+                int parry = defFrame.findValueByName("こぶし");
+                if (parry == -1) parry = 25;
+                defenderStatusLabel.setText(String.format("➔ 回避: %d%% | 受け流し(こぶし): %d%%", avoid, parry));
             }
         }
     }
@@ -224,7 +261,7 @@ public class BattleFrame extends JFrame {
             enemyMaxHp = hp;
             enemyCurrentHp = hp;
             updateEnemyHpDisplay();
-            logAppend("📢 敵のエネミーデータが初期化されました。(最大HP: " + hp + ")");
+            logAppend("📢 エネミーのHPが初期化されました。 (最大HP: " + hp + ")");
         } catch (NumberFormatException ex) {
             JOptionPane.showMessageDialog(this, "数値を入力してください。");
         }
@@ -240,240 +277,155 @@ public class BattleFrame extends JFrame {
         }
     }
 
-    // 🌟 攻撃・防御・受け流し・HP減少を一括処理する「がっちゃんこメインコア」
+    // 🌟 攻撃ダイス・防御ダイス・HP減少をすべて全自動でワンアクション処理！
     private void executeBattleRound() {
         String attacker = (String) attackerCombo.getSelectedItem();
         String defender = (String) defenderCombo.getSelectedItem();
-        if (attacker == null || defender == null) return;
+        int weaponIdx = weaponSelectCombo.getSelectedIndex();
 
-        logAppend(String.format("\n【戦闘開始】%s  vs  %s", attacker, defender));
+        if (attacker == null || defender == null || weaponIdx < 0) return;
 
-        // 1. 攻撃側の命中ロール
-        int atkTarget = 50;
-        try { atkTarget = Integer.parseInt(weaponHitInput.getText().trim()); } catch(Exception e){}
+        String[] selectedWeapon = currentAttackerWeapons.get(weaponIdx);
+        String weaponName = selectedWeapon[0];
+        int modeIdx = modeCombo.getSelectedIndex();
 
+        logAppend(String.format("\n【戦闘ラウンド】%s  vs  %s", attacker, defender));
+        logAppend(String.format(" ➔ %s は「%s」を構えた！", attacker, weaponName));
+
+        // 1. 命中判定（一律50%にするか、本来は技能値を見たいですが、今回は戦闘をスムーズにするため簡易命中50%とします。必要なら技能値連動へ改造可能）
         int atkDice = random.nextInt(100) + 1;
-        boolean isHit = atkDice <= atkTarget;
-
-        logAppend(String.format(" ➔ [攻撃] 命中率:%d%% | 出目:%d ➔ %s", atkTarget, atkDice, isHit ? "命中成功！🎯" : "ミス！😭"));
+        boolean isHit = atkDice <= 50;
+        logAppend(String.format(" ➔ [攻撃判定] 簡易命中率:50%% | 出目:%d ➔ %s", atkDice, isHit ? "成功！🎯" : "外れた！😭"));
 
         if (!isHit) {
-            logAppend(" ➔ 攻撃が外れたため、このラウンドは終了です。");
+            logAppend(" ➔ 攻撃が不発に終わったため、ラウンド終了です。");
+            logAppend("--------------------------------------------------\n");
             return;
         }
 
-        // 2. 防御側の処理（回避 or 受け流し or なし）
+        // 2. 防御側のジャッジ
         boolean damageApplies = true;
-
-        if (noneRadio.isSelected()) {
-            logAppend(String.format(" ➔ [防御] %s は無防備を宣言。攻撃が直撃します！", defender));
-        } else {
-            int defDice = random.nextInt(100) + 1;
-            int defTarget = 0;
-            String modeStr = "";
-
-            if (avoidRadio.isSelected()) {
-                modeStr = "回避";
-                if (defender.equals("エネミー（敵）")) {
-                    defTarget = 30;
-                } else {
-                    CharacterFrame defFrame = findFrameByName(defender);
-                    if (defFrame != null) defTarget = defFrame.findValueByName("回避");
-                }
-
-                boolean isAvoidSuccess = defDice <= defTarget;
-                logAppend(String.format(" ➔ [防御] %s が【回避】に挑戦！(目標:%d%%) | 出目:%d ➔ %s", defender, defTarget, defDice, isAvoidSuccess ? "大成功！華麗に避けた！" : "回避失敗！"));
-                if (isAvoidSuccess) damageApplies = false; // ダメージなし！
-
-            } else if (parryRadio.isSelected()) {
-                modeStr = "受け流し";
-                if (defender.equals("エネミー（敵）")) {
-                    defTarget = 30;
-                } else {
-                    CharacterFrame defFrame = findFrameByName(defender);
-                    if (defFrame != null) {
-                        defTarget = defFrame.findValueByName("こぶし");
-                        if (defTarget == -1) defTarget = 25; // デフォルト
-                    }
-                }
-
-                boolean isParrySuccess = defDice <= defTarget;
-                logAppend(String.format(" ➔ [防御] %s が【受け流し】に挑戦！(目標:%d%%) | 出目:%d ➔ %s", defender, defTarget, defDice, isParrySuccess ? "成功！攻撃を武器で受け流した！" : "受け流し失敗！"));
-                if (isParrySuccess) {
-                    // TRPGシステムによって「ダメージ半減」か「0」か変わりますが、今回は「受け流し成功でダメージを完全に防いだ」とします
-                    // 半減にしたい場合は下のダメージ処理のところで割る2にカスタマイズ可能です！
-                    damageApplies = false;
-                }
-            }
-        }
-
-        // 3. ダメージ算出 ＆ HP減少の自動適用
-        if (damageApplies) {
-            int damage = rollDamage(damageDiceInput.getText().trim());
-            logAppend(String.format(" ➔ 💥 ダメージダイスの結果: 【 %d ダメージ 】 が直撃！", damage));
-
-            if (defender.equals("エネミー（敵）")) {
-                if (enemyMaxHp == 0) {
-                    logAppend(" ⚠️ 敵のHPが未設定のため、減少処理をスキップしました。");
-                    return;
-                }
-                enemyCurrentHp = Math.max(0, enemyCurrentHp - damage);
-                updateEnemyHpDisplay();
-                logAppend(String.format(" ➔ [HP変動] 敵のHPが減少しました。"));
-                if (enemyCurrentHp <= 0) logAppend(" 💀 敵（エネミー）は倒れました！");
-            } else {
-                CharacterFrame defFrame = findFrameByName(defender);
-                if (defFrame != null) {
-                    int oldHp = defFrame.findValueByName("ＨＰ");
-                    if (oldHp != -1) {
-                        int newHp = Math.max(0, oldHp - damage);
-                        defFrame.updateHpDirectly(newHp);
-                        logAppend(String.format(" ➔ [HP変動] %s のHP: %d ➔ %d", defender, oldHp, newHp));
-                        if (newHp <= 0) logAppend(String.format(" 💀 %s は意識を失ったか、倒れました！", defender));
-                    }
-                }
-            }
-        } else {
-            logAppend(String.format(" ➔ ✨ %s は攻撃を完全に防いだ！[ダメージ: 0]", defender));
-        }
-        logAppend("--------------------------------------------------\n");
-    }
-
-    private int rollDamage(String formula) {
-        String cleanForm = formula.toUpperCase().replaceAll("\\s+", "");
-        int total = 0;
-        try {
-            if (cleanForm.contains("D")) {
-                String[] sub = cleanForm.split("D");
-                int num = sub[0].isEmpty() ? 1 : Integer.parseInt(sub[0]);
-                String sidePart = sub[1];
-                int sides = 6;
-                int bonus = 0;
-
-                if (sidePart.contains("+")) {
-                    sides = Integer.parseInt(sidePart.split("\\+")[0]);
-                    bonus = Integer.parseInt(sidePart.split("\\+")[1]);
-                } else {
-                    sides = Integer.parseInt(sidePart);
-                }
-
-                for (int i = 0; i < num; i++) total += random.nextInt(sides) + 1;
-                total += bonus;
-            } else {
-                total = Integer.parseInt(cleanForm);
-            }
-        } catch (Exception e) {
-            total = random.nextInt(6) + 1; // エラー時は1D6をデフォルトにする安全策
-        }
-        return total;
-    }
-
-
-    private void logAppend(String text) {
-        battleLogArea.append(text + "\n");
-        battleLogArea.setCaretPosition(battleLogArea.getDocument().getLength()); // 最下部へ自動スクロール
-    }
-
-    private CharacterFrame findFrameByName(String name) {
-        for (CharacterFrame frame : activeFrames) {
-            if (frame.getCharacterName().equals(name)) return frame;
-        }
-        return null;
-    }
-    /**
-     * ⚔️ 外部の「武器・戦闘ウィンドウ」の攻撃ボタンと完全合体する窓口！
-     * プレイヤーが自分の画面で振った「武器の命中・ダメージ」をここに引き継いで自動処理します。
-     */
-    /**
-     * ⚔️ 外部の「武器・戦闘ウィンドウ」の攻撃ボタンと完全合体する窓口！
-     * 【完全秘匿版】敵のHPが隠されている時は、ログの計算結果も「？？？」に隠します。
-     */
-    public void applyExternalDamage(String attackerName, String weaponName, int damage) {
-        String targetName = (String) defenderCombo.getSelectedItem();
-        if (targetName == null) targetName = "エネミー（敵）";
-
-        logAppend(String.format("\n💥 【連携攻撃】%s が「%s」で急襲！", attackerName, weaponName));
-
-        // 1. 防御側の処理（回避か、受け流しか、無防備か）
-        boolean damageApplies = true;
-
-        if (noneRadio.isSelected()) {
-            logAppend(String.format(" ➔ [防御] %s は無防備！攻撃が直撃します。", targetName));
-        } else {
+        if (!noneRadio.isSelected()) {
             int defDice = random.nextInt(100) + 1;
             int defTarget = 0;
 
             if (avoidRadio.isSelected()) {
-                if (targetName.equals("エネミー（敵）")) {
-                    defTarget = 30;
-                } else {
-                    CharacterFrame defFrame = findFrameByName(targetName);
+                if (defender.equals("エネミー（敵）")) { defTarget = 30; }
+                else {
+                    CharacterFrame defFrame = findFrameByName(defender);
                     if (defFrame != null) defTarget = defFrame.findValueByName("回避");
                 }
                 boolean isAvoidSuccess = defDice <= defTarget;
-                logAppend(String.format(" ➔ [防御] %s が【回避】に挑戦！(目標:%d%%) | 出目:%d ➔ %s",
-                        targetName, defTarget, defDice, isAvoidSuccess ? "大成功！攻撃をかわした！" : "回避失敗！"));
+                logAppend(String.format(" ➔ [防御判定] %s の【回避】(目標:%d%%) | 出目:%d ➔ %s", defender, defTarget, defDice, isAvoidSuccess ? "成功！華麗に避けた！" : "回避失敗！"));
                 if (isAvoidSuccess) damageApplies = false;
 
             } else if (parryRadio.isSelected()) {
-                if (targetName.equals("エネミー（敵）")) {
-                    defTarget = 30;
-                } else {
-                    CharacterFrame defFrame = findFrameByName(targetName);
+                if (defender.equals("エネミー（敵）")) { defTarget = 30; }
+                else {
+                    CharacterFrame defFrame = findFrameByName(defender);
                     if (defFrame != null) {
                         defTarget = defFrame.findValueByName("こぶし");
                         if (defTarget == -1) defTarget = 25;
                     }
                 }
                 boolean isParrySuccess = defDice <= defTarget;
-                logAppend(String.format(" ➔ [防御] %s が【受け流し】に挑戦！(目標:%d%%) | 出目:%d ➔ %s",
-                        targetName, defTarget, defDice, isParrySuccess ? "成功！武器で受け流した！" : "受け流し失敗！"));
+                logAppend(String.format(" ➔ [防御判定] %s の【受け流し】(目標:%d%%) | 出目:%d ➔ %s", defender, defTarget, defDice, isParrySuccess ? "成功！攻撃をガードした！" : "受け流し失敗！"));
                 if (isParrySuccess) damageApplies = false;
             }
         }
 
-        // 2. 確定したダメージをHPに適用する
+        // 3. ダメージ計算（連射モード対応！）
         if (damageApplies) {
-            logAppend(String.format(" ➔ 💥 確定ダメージ: 【 %d 】 が突き刺さる！", damage));
+            int totalDamage = 0;
 
-            if (targetName.equals("エネミー（敵）")) {
+            // 1発目
+            int d1 = rollDamage(selectedWeapon[1]);
+            totalDamage += d1;
+            logAppend(String.format(" ➔ 💥 1発目のダメージ: [%d]", d1));
+
+            // 連射分（データが空でなければ振る）
+            if (modeIdx >= 1 && !selectedWeapon[2].isEmpty()) {
+                int d2 = rollDamage(selectedWeapon[2]);
+                totalDamage += d2;
+                logAppend(String.format(" ➔ 💥 2発目のダメージ: [%d]", d2));
+            }
+            if (modeIdx == 2 && !selectedWeapon[3].isEmpty()) {
+                int d3 = rollDamage(selectedWeapon[3]);
+                totalDamage += d3;
+                logAppend(String.format(" ➔ 💥 3発目のダメージ: [%d]", d3));
+            }
+
+            logAppend(String.format(" ➔ 🛑 総直撃ダメージ: 【 %d 】", totalDamage));
+
+            // HP減少の適用
+            if (defender.equals("エネミー（敵）")) {
                 if (enemyMaxHp == 0) {
-                    logAppend(" ⚠️ 敵のHPが未設定です。エネミー設定の「設定」ボタンを押してください。");
+                    logAppend(" ⚠️ 敵のHPが未設定です。初期設定を行ってください。");
                     return;
                 }
-
-                // 内部ではちゃんとHPを減らす
-                enemyCurrentHp = Math.max(0, enemyCurrentHp - damage);
+                enemyCurrentHp = Math.max(0, enemyCurrentHp - totalDamage);
                 updateEnemyHpDisplay();
 
-                // ⭕ 【ここを修正！】チェックが入っている時はログの数値も隠す！
                 if (hideEnemyHpCheck.isSelected()) {
                     logAppend(" ➔ [HP変動] 敵のHP: ？？？ ➔ ？？？");
-                    if (enemyCurrentHp <= 0) logAppend(" 📢 【GM秘密ログ】敵（エネミー）のHPが0になりました！倒れました！");
+                    if (enemyCurrentHp <= 0) logAppend(" 📢 【GM秘密ログ】エネミーのHPが0になりました！");
                 } else {
-                    // チェックがない通常時は数値を出す
-                    logAppend(String.format(" ➔ [HP変動] 敵のHP: %d ➔ %d", enemyCurrentHp + damage, enemyCurrentHp));
+                    logAppend(String.format(" ➔ [HP変動] 敵のHP: %d ➔ %d", enemyCurrentHp + totalDamage, enemyCurrentHp));
                     if (enemyCurrentHp <= 0) logAppend(" 💀 敵（エネミー）は倒れました！");
                 }
-
             } else {
-                // 防御側がプレイヤーキャラクターの場合（こちらは常に数値を表示）
-                CharacterFrame defFrame = findFrameByName(targetName);
+                // プレイヤーキャラのHP減少
+                CharacterFrame defFrame = findFrameByName(defender);
                 if (defFrame != null) {
                     int oldHp = defFrame.findValueByName("ＨＰ");
                     if (oldHp != -1) {
-                        int newHp = Math.max(0, oldHp - damage);
+                        int newHp = Math.max(0, oldHp - totalDamage);
                         defFrame.updateHpDirectly(newHp);
-                        logAppend(String.format(" ➔ [HP変動] %s のHP: %d ➔ %d", targetName, oldHp, newHp));
-                        if (newHp <= 0) logAppend(String.format(" 💀 %s は倒れました！", targetName));
+                        logAppend(String.format(" ➔ [HP変動] %s のHP: %d ➔ %d", defender, oldHp, newHp));
+                        if (newHp <= 0) logAppend(String.format(" 💀 %s は倒れました！", defender));
                     }
                 }
             }
         } else {
-            logAppend(String.format(" ➔ ✨ %s は攻撃を完全に防いだ！[ダメージ: 0]", targetName));
+            logAppend(String.format(" ➔ ✨ %s は攻撃を完全にシャットアウトした！[ダメージ: 0]", defender));
         }
         logAppend("--------------------------------------------------\n");
     }
 
-    // ⚠️ 二重定義になっていた「private CharacterFrame findFrameByName(String name)」の塊は丸ごと削除しました！
+    private int rollDamage(String formula) {
+        if (formula == null || formula.isEmpty()) return 0;
+        String clean = formula.toUpperCase().replaceAll("\\s+", "");
+        int total = 0;
+        try {
+            String[] parts = clean.split("\\+");
+            for (String part : parts) {
+                if (part.contains("D")) {
+                    String[] sub = part.split("D");
+                    int count = Integer.parseInt(sub[0]);
+                    int sides = Integer.parseInt(sub[1]);
+                    for (int i = 0; i < count; i++) total += random.nextInt(sides) + 1;
+                } else {
+                    total += Integer.parseInt(part);
+                }
+            }
+        } catch (Exception e) {
+            total = random.nextInt(6) + 1; // エラー時安全用1D6
+        }
+        return total;
+    }
+
+    private void logAppend(String text) {
+        battleLogArea.append(text + "\n");
+        battleLogArea.setCaretPosition(battleLogArea.getDocument().getLength());
+    }
+
+    private CharacterFrame findFrameByName(String name) {
+        for (Window window : Window.getWindows()) {
+            if (window instanceof CharacterFrame && window.isShowing()) {
+                CharacterFrame cf = (CharacterFrame) window;
+                if (cf.getCharacterName().equals(name)) return cf;
+            }
+        }
+        return null;
+    }
 }

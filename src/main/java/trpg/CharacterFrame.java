@@ -152,11 +152,13 @@ public class CharacterFrame extends JFrame {
         sanBtn.addActionListener(e -> new SanCheckFrame(this, logFrame));
         statusGrid.add(sanBtn);
 
-        JButton weaponBtn = new JButton("⚔️ 武器・戦闘");
+// 重複を削除して1つにまとめました！
+        JButton weaponBtn = new JButton("⚔️ 統合戦闘"); // ⚔️ 統合戦闘ステージ から文字を短縮！
         weaponBtn.setFont(new Font("Meiryo", Font.BOLD, 10));
         weaponBtn.setBackground(new Color(255, 235, 205));
-        weaponBtn.addActionListener(e -> new WeaponRollFrame(this, logFrame));
+        weaponBtn.addActionListener(e -> new BattleFrame(this));
         statusGrid.add(weaponBtn);
+
         statusContainer.add(statusGrid, BorderLayout.CENTER);
         scrollContentPanel.add(statusContainer);
         scrollContentPanel.add(Box.createVerticalStrut(10));
