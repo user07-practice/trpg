@@ -183,6 +183,7 @@ public class WeaponRollFrame extends JFrame {
     }
 
     // 攻撃ロール実行
+    // 攻撃ロール実行（★戦闘画面とがっちゃんこ連動版！）
     private void rollWeaponAttack() {
         String charName = mainFrame.getCharacterName();
         String weaponName = weaponNameField.getText().trim();
@@ -195,26 +196,54 @@ public class WeaponRollFrame extends JFrame {
         sb.append("  【使用者】 ").append(charName).append("\n");
         sb.append("  【使用武器】 ").append(weaponName).append("\n");
 
+        // 連射に対応するため、このターンに出た「合計ダメージ」を計算する変数
+        int totalDamageSent = 0;
+
         if (modeIdx == 0) {
             String dmgText = damageField1.getText().trim().toUpperCase();
             String result = evalDamage(dmgText);
             sb.append("  【ダメージ】 ").append(dmgText).append(" ➔ ［ ").append(result).append(" ］ダメージ！");
+
+            // ★1発分のダメージを数値に変換して合計に足す
+            try { totalDamageSent += Integer.parseInt(result); } catch(Exception e){}
         } else {
             String dmgText1 = damageField1.getText().trim().toUpperCase();
-            sb.append("  【1発目ダメージ】 ").append(dmgText1).append(" ➔ ［ ").append(evalDamage(dmgText1)).append(" ］\n");
+            String res1 = evalDamage(dmgText1);
+            sb.append("  【1発目ダメージ】 ").append(dmgText1).append(" ➔ ［ ").append(res1).append(" ］\n");
+            try { totalDamageSent += Integer.parseInt(res1); } catch(Exception e){}
 
             if (modeIdx >= 1) {
                 String dmgText2 = damageField2.getText().trim().toUpperCase();
-                sb.append("  【2発目ダメージ】 ").append(dmgText2).append(" ➔ ［ ").append(evalDamage(dmgText2)).append(" ］\n");
+                String res2 = evalDamage(dmgText2);
+                sb.append("  【2発目ダメージ】 ").append(dmgText2).append(" ➔ ［ ").append(res2).append(" ］\n");
+                try { totalDamageSent += Integer.parseInt(res2); } catch(Exception e){}
             }
             if (modeIdx == 2) {
                 String dmgText3 = damageField3.getText().trim().toUpperCase();
-                sb.append("  【3発目ダメージ】 ").append(dmgText3).append(" ➔ ［ ").append(evalDamage(dmgText3)).append(" ］\n");
+                String res3 = evalDamage(dmgText3);
+                sb.append("  【3発目ダメージ】 ").append(dmgText3).append(" ➔ ［ ").append(res3).append(" ］\n");
+                try { totalDamageSent += Integer.parseInt(res3); } catch(Exception e){}
             }
             sb.append("   ➔ 連射による波状攻撃だ！");
         }
 
         logFrame.addLog(sb.toString());
+
+        // 🔥【ここが超重要ながっちゃんこ連動処理！】
+        // 現在画面上に開いている「統合決戦ステージ（BattleFrame）」を自動で探し出す
+        BattleFrame battleStage = null;
+        for (Window window : Window.getWindows()) {
+            // クラス名が「BattleFrame」かつ画面に表示されているかチェック
+            if (window.getClass().getName().endsWith("BattleFrame") && window.isShowing()) {
+                battleStage = (BattleFrame) window;
+                break;
+            }
+        }
+
+        // もし戦闘画面が開いていたら、計算された合計ダメージを自動で送り込む！
+        if (battleStage != null && totalDamageSent > 0) {
+            battleStage.applyExternalDamage(charName, weaponName, totalDamageSent);
+        }
     }
 
     // ダイス解析エンジン

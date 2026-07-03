@@ -120,6 +120,11 @@ public class CharacterFrame extends JFrame {
         nameField.setFont(new Font("Meiryo", Font.PLAIN, 14));
         namePanel.add(nameLabel, BorderLayout.WEST);
         namePanel.add(nameField, BorderLayout.CENTER);
+        JButton battleBtn = new JButton("🏟️ 決戦（HP管理）");
+        battleBtn.setFont(new Font("Meiryo", Font.BOLD, 11));
+        battleBtn.setBackground(new Color(255, 204, 204)); // 決戦カラー
+        battleBtn.addActionListener(e -> new BattleFrame(this));
+        namePanel.add(battleBtn, BorderLayout.EAST); // 一番右端に配置！
         scrollContentPanel.add(namePanel);
         scrollContentPanel.add(Box.createVerticalStrut(10));
 
@@ -618,5 +623,11 @@ public class CharacterFrame extends JFrame {
         } catch (Exception e) {
             imageLabel.setText("⚠️ 画像読み込みエラー");
         }
+    }
+    public void updateHpDirectly(int newHp) {
+        // 画面の「ＨＰ」欄の数値を新しい値に書き換える
+        hpField.setText(String.valueOf(newHp));
+        // 必要ならここでdataオブジェクト側にも即時反映
+        data.setHp(newHp);
     }
 }
